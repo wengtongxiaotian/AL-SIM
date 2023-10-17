@@ -3,14 +3,18 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = 'false'
 # os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = '0.9'
 import sys
+sys.path.append('.')
+sys.path.append(os.path.dirname(__file__))
+if len(sys.argv) == 1:
+    sys.argv.append(f'mode-vscode_sigma-0.03_trainsize-600_validsize-90_bs-5_features-128_caption-sigma0.03')
+from toolfunctions.tool import update,dict2str,create_path,tiff,glob,savetif,savepng,exec_id,printinfo,record_time
+# record_time(100)
+from toolfunctions.myarray import norm
+from data_simulation.distort_new import twist
 import jax
 import time
 import numpy as np
 start_time = time.time()
-sys.path.append('.')
-sys.path.append(os.path.dirname(__file__))
-from toolfunctions.tool import update,dict2str,create_path,tiff,glob,savetif,savepng,exec_id,printinfo
-from toolfunctions.myarray import norm
 from collections import defaultdict
 from train_utils import simple_score as compute_metrics
 import jax.numpy as jnp
@@ -19,8 +23,8 @@ import optax
 from typing import Any
 from ai_codes.ab_eval import Eval
 cfg = defaultdict(lambda:None)
-cfg['_group'] = 'dlsim2'
-groupcaption = 'date:20231014'
+cfg['_group'] = 'with_pattern_rec'
+groupcaption = 'date:20231016'
 # 一个group是一系列的调参，应当保证一个group的数据集和测试性能的代码基本一致
 #_record/{_group}-|cfgstrs.txt
 #                 |code/
@@ -46,15 +50,15 @@ else:
     basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-99_validsize-5_bs-3_features-32_optim-adam_cropsize-256' #memory 32.6G
 
 cfg = update(cfg,basecfg)
-cfg = update(cfg,sys.argv[-1]+'_trainsize-70_validsize-30')
+cfg = update(cfg,sys.argv[-1])
 with open(cfgstrs,'a') as f:
     f.write('\n'+dict2str(cfg))
 # scalers = ['trainedsize','time','valloss','rec_loss','nrmse','pattern_loss','trainloss']
 # evaltxt里面的可选项，这些是随时间T的变量，这里有time和trainedsize变量是因为test的时间点不固定（考虑到时间成本）,就不要考虑文件读写的时间成本了。
 print(cfg)
 # coco_bg = jnp.load('/data_nas/nas/Research/dlold/data/cocosim.npy')
-def iterwrapfn(train_file,cropsize,bs):
-    arr = tiff.imread(train_file)
+def iterwrapfn(train_files,cropsize,bs):
+    arr = tiff.imread(train_files) #可以读文件列表或者单个文件
     np.random.shuffle(arr)
     arr = arr[:arr.shape[0]//bs*bs]
     ### random crop
@@ -125,19 +129,20 @@ def noise_generation(cfg,key_new,):
     float_noise = jax.random.uniform(key_new,shape=(cfg['bs'],1,1,1), minval=0, maxval=1)
     noise = jax.random.normal(key_new, (cfg['bs'],9,cfg['cropsize'],cfg['cropsize'])) * float_noise *cfg['sigma']
     return noise
-preiod = cfg['preiod']
-train_file = f'/dataf/Research/Jax-AI-for-science/Data/2D_lines_SIM/N_30_preiod_{preiod}/train_gt/*.tif'
-train_file = glob.glob(train_file)
-test_files = train_file[-cfg['validsize']:][::-1]
+train_files = glob.glob(f'/home/wtxt/a/data/vo_circle_sim/30/train_gt/*.tif')
+test_files = glob.glob(f'/home/wtxt/a/data/vo_circle_sim/30/test_gt/*.tif')
+# train_files = '/dataf/ndl/_record/newdataset/1000-1000-100-20-merge_id-onj.tif'
+# test_files = '/dataf/ndl/_record/newdataset/100-1000-100-20-merge_id-ond.tif'
 dataset_ts = iterwrapfn(test_files,cfg['cropsize'],cfg['bs'])
 
 
 trained = 0
+from tqdm import tqdm
 for epoch in range(10000):
-    if epoch % 20 == 0:#  and epoch>10
+    if epoch % 50 == 0:#  and epoch>10
         print("start evaluation")
+        eval_start_time = time.time()
         traindir = xxres
-        showdir = create_path(xxres,'imgs',str(trained))
         checkpoints.save_checkpoint(ckpt_dir=ckptdir,
                             target={'params': state.params,
                                     'rng': state.rng},
@@ -146,6 +151,7 @@ for epoch in range(10000):
         metrics_eval = {'rec': [], 'rec_p': [], 'nrmse': [], 'loss':[]}
         for x in dataset_ts:
             noise,I = noise_generation(cfg,jax.random.PRNGKey(0)),pattern_generation_jax(cfg,jax.random.PRNGKey(0))
+            I = twist(I)
             batch = (x,I,noise)
             metrics,res = eval_step(state,batch)
             metrics_eval = {k: v + [metrics[k]] for k, v in metrics_eval.items()}
@@ -153,7 +159,7 @@ for epoch in range(10000):
         print('\n',"%.2e"%np.array(metrics_eval['rec'].mean()),"%.2e"%np.array(metrics_eval['nrmse'].mean()))
         # test(state)
         eval.trained,eval.time,eval.loss,eval.rec,eval.nrmse,eval.rec_p = \
-            trained,int(time.time()-start_time),metrics_eval['loss'],metrics_eval['rec'],metrics_eval['nrmse'],metrics_eval['rec_p']
+            trained,int(time.time()-start_time),metrics_eval['loss'].item()*100,metrics_eval['rec'].item()*100,metrics_eval['nrmse'].item()*100,metrics_eval['rec_p'].item()*100
         eval.save()
         # with open(f'{traindir}/scaler.txt','a') as f:
         #     f.write('\t'.join([str(x) for x in [trained,int(time.time()-start_time),metrics_eval['loss'],trainloss]])+'\n') 
@@ -172,17 +178,19 @@ for epoch in range(10000):
             savepng(I[i,:].reshape(3,3,256,256).transpose(0,2,1,3).reshape(3*256,3*256),create_path(imgdir,printinfo(ext='.png')))
             savepng(res['rec_p'][i,:].reshape(3,3,256,256).transpose(0,2,1,3).reshape(3*256,3*256),create_path(imgdir,printinfo(ext='.png')))
             time.sleep(1)
+        print('eval consume seconds: ',int(time.time()-eval_start_time))
     rng = state.rng
-    dataset = iterwrapfn(train_file[:cfg['trainsize']],cfg['cropsize'],cfg['bs'])
-    for i,x in enumerate(dataset):
-        print(trained,int(time.time()-start_time))
+    dataset = iterwrapfn(train_files[:cfg['trainsize']],cfg['cropsize'],cfg['bs'])
+    for i,x in tqdm(enumerate(dataset)):
+        # print(trained,int(time.time()-start_time))
         trained += x.shape[0]
         noise,I = noise_generation(cfg,state.rng),pattern_generation_jax(cfg,state.rng,),
+        I = twist(I)
         batch = (x,I,noise)
         error, res, state = train_step(state,batch)
         trainloss = error['loss'] if i==0 else trainloss*i/(i+1) + error['loss']/(i+1)
-
-
+    eval.trainloss = trainloss.item()
+os._exit(0)
 
 
 

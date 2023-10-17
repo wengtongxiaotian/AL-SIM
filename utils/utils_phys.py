@@ -234,6 +234,7 @@ def rot2d(A, theta):
     rot = jnp.array([[jnp.cos(theta), jnp.sin(theta)], [-jnp.sin(theta), jnp.cos(theta)]])
     return jnp.matmul(rot, A)
 def pattern_generation_jax(cfg,key_new,):
+    # cfg["cropsize"] = 2*cfg["cropsize"]
     # key_new = state.rng
     SIM_params = {
             "M": [0.2, 0.8], #[0.5, 0.8],
@@ -249,8 +250,8 @@ def pattern_generation_jax(cfg,key_new,):
     theta_start = jax.random.uniform(key_new, shape=(cfg['bs'],1,), minval=SIM_params["theta_start"][0], maxval=SIM_params["theta_start"][1])
     phi = jax.random.uniform(key_new, shape=(cfg['bs'],SIM_params["n_angle"],), minval=SIM_params["phi"][0], maxval=SIM_params["phi"][1])
     rho = jax.random.uniform(key_new, shape=(cfg['bs'],SIM_params["n_angle"],1), minval=SIM_params["rho"][0], maxval=SIM_params["rho"][1])
-    Ks = jax.vmap(get_Ks,in_axes=(0,None,0))(theta_start, SIM_params["n_angle"], rho*cfg['cropsize'])
-    I = jax.vmap(pattern_generation,in_axes=(0,0,None,None,0,None))(M, Ks, n_angle, n_phase, phi, cfg['cropsize'])
+    Ks = jax.vmap(get_Ks,in_axes=(0,None,0))(theta_start, SIM_params["n_angle"], 2*rho*cfg['cropsize'])
+    I = jax.vmap(pattern_generation,in_axes=(0,0,None,None,0,None))(M, Ks, n_angle, n_phase, phi, 2*cfg['cropsize'])
     return I[:,0]
 
 if __name__ == "__main__":
