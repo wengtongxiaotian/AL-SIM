@@ -1,9 +1,9 @@
 #get_pth get_data get_cfg get_model get_result get_score
 import sys
 sys.path.append('.')
-sys.argv.append('cuda-2')
+sys.argv.append('cuda-0')
 from tool import *
-exec_dir = '/dataf/b/_record/coco/pk'
+exec_dir = '/dataf/b/_record/cocoandcurve/ng'
 ckptdir = exec_dir+'/ckpt'
 #/dataf/dl/_record/pred_I_unet/zwsvx/params/121440.pkl
 import pickle
@@ -92,12 +92,12 @@ def testwrapfn(arr3d,patchsize=cfg['cropsize'],bs=cfg['bs'],norm_fn=norm,iteridx
     while iteridx < arr4d.shape[0]:
         arr = arr4d[iteridx:iteridx+bs]
         # arr = norm_fn(arr)
-        arr,mean,var = norm_fn(arr)
+        # arr,mean,var = norm_fn(arr)
         mean,var = 0,1
         iteridx += bs
         yield arr,mean,var
-# array = norm(testdata)
-array = testdata
+array = norm(testdata)
+# array = testdata
 testset = testwrapfn(array,norm_fn = norm_train)
 rng1, rng2, rng3, rng4 = jax.random.split(rng, 4)
 modelout,modelin = [],[]

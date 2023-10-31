@@ -1,8 +1,9 @@
 import sys
+import glob
 sys.path.append('.')
 if len(sys.argv) == 1:
-    sys.argv.append(f'group-coco_cuda-1')#_onlypattern
-from tool import np,update,dict2str,create_path,tiff,glob,savetif,savepng,printinfo,exec_dir,saveresult,global_dict,tikcount
+    sys.argv.append(f'group-cocoandcurve_cuda-2_realdata')#_onlypattern
+from tool import np,update,dict2str,create_path,tiff,savetif,savepng,printinfo,exec_dir,saveresult,global_dict,tikcount
 from data_simulation.distort import twist
 from train_utils import simple_score as compute_metrics
 from ai_codes.eval_class import Eval
@@ -21,7 +22,7 @@ imgdir = create_path(exec_dir,'imgs')
 tiffdir = create_path(exec_dir,'tiffs')
 print(exec_dir,evalpath,ckptdir)
 basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-99_validsize-5_bs-3_features-32_optim-adam_cropsize-256' #memory 32.6G
-basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-6000_validsize-90_bs-10_features-128_optim-adam_cropsize-256_mode-vscode_caption-sigma0.03'
+basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-100000_validsize-1000_bs-10_features-128_optim-adam_cropsize-256'
 cfg = update({},basecfg)
 cfg = update(cfg,sys.argv[-1])
 eval = Eval(evalpath,dict2str(cfg))
@@ -49,7 +50,7 @@ def iterwrapfn(train_files,cropsize,bs):
     res = norm(res)
     print(printinfo())
     return res
-I_data = tiff.imread('/dataf/b/_record/awareligthfield/qz/test55-2-pattern.tif')
+I_data = tiff.imread('/dataf/b/_record/cocoandcurve/nj/test55-2-pattern.tif')
 def xx(key_new):
     I = np.zeros((cfg['bs'],9,cfg['cropsize'],cfg['cropsize']))
     for i in range(cfg['bs']):
@@ -122,13 +123,25 @@ test_files = glob.glob(f'/home/wtxt/a/data/vo_circle_sim/30/test_gt/*.tif')
 # test_files = '/dataf/ndl/_record/newdataset/100-1000-100-20-merge_id-ond.tif'
 train_files = '/dataf/ndl/_record/newdataset/coco_bg.tif'
 test_files = '/dataf/ndl/_record/newdataset/coco_bg.tif'
-dataset_ts = iterwrapfn(test_files,cfg['cropsize'],cfg['bs'])[-cfg['validsize']:]
 
+from torch.utils.data import DataLoader
+from utils.utils_data import dataset, psfset, get_sample
+coco_dir = '/dataf/Research/Jax-AI-for-science/Guided-SIM-Meta/data/unlabeled2017/*.jpg'
+curve_dir = '/dataf/b/data/vo_circle_sim/30/train_gt/*.tif'
+sharp_imgs = glob.glob(coco_dir)+glob.glob(curve_dir)*20
+import random
+random.shuffle(sharp_imgs)
+print(len(sharp_imgs)) # 12万多
+train_files = sharp_imgs[:cfg['trainsize']]
+test_files = sharp_imgs[-cfg['validsize']:]#[int(len(sharp_imgs)*0.1):]
+# dataset_ts = iterwrapfn(test_files,cfg['cropsize'],cfg['bs'])[-cfg['validsize']:]
+dataset_tn = DataLoader(dataset(train_files, cfg['cropsize'], cfg['trainsize']), batch_size=cfg['bs'], shuffle=True, num_workers=0, drop_last=True)
+dataset_ts = DataLoader(dataset(test_files, cfg['cropsize'], cfg['validsize']), batch_size=cfg['bs'], shuffle=False, num_workers=0, drop_last=True)
 
 trained = 0
 from tqdm import tqdm
 for epoch in range(10000):
-    if epoch % 1 == 0:#  and epoch>10
+    if epoch > 0:#  and epoch>10
         print("start evaluation",printinfo())
         traindir = exec_dir
         checkpoints.save_checkpoint(ckpt_dir=ckptdir,
@@ -138,6 +151,8 @@ for epoch in range(10000):
                             overwrite=True)        
         metrics_eval = {'rec': [], 'rec_p': [], 'nrmse': [], 'loss':[]}
         for x in dataset_ts:
+            x = jnp.array(x)
+            x = jax.lax.stop_gradient(x)
             noise = noise_generation(cfg,jax.random.PRNGKey(0))
             if not global_dict.get('realdata',False):
                 I = pattern_generation_jax(cfg,jax.random.PRNGKey(0))
@@ -171,13 +186,15 @@ for epoch in range(10000):
         # endregion
     
     rng = state.rng
-    dataset = iterwrapfn(train_files[:cfg['trainsize']],cfg['cropsize'],cfg['bs'])
-    for i,x in tqdm(enumerate(dataset)):
+    # dataset_tn = iterwrapfn(train_files[:cfg['trainsize']],cfg['cropsize'],cfg['bs'])
+    for i,x in tqdm(enumerate(dataset_tn)):
+        x = jnp.array(x)
+        x = jax.lax.stop_gradient(x)
         # print(trained,int(time.time()-start_time))
         trained += x.shape[0]
         noise = noise_generation(cfg,state.rng)
         if not global_dict.get('realdata',False):
-            I = pattern_generation_jax(cfg,state.rng,),
+            I = pattern_generation_jax(cfg,state.rng,)
             I = twist(I)
         else:I = xx(state.rng)
         batch = (x,I,noise)
