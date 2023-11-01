@@ -1,15 +1,14 @@
 #get_pth get_data get_cfg get_model get_result get_score
 import sys
 sys.path.append('.')
-sys.argv.append('cuda-0')
+sys.argv.append('cuda-2')
 from tool import *
-exec_dir = '/dataf/b/_record/cocoandcurve/ng'
+exec_dir = '/dataf/b/_record/dlsim/mu'
 ckptdir = exec_dir+'/ckpt'
 #/dataf/dl/_record/pred_I_unet/zwsvx/params/121440.pkl
 import pickle
 import jax.numpy as jnp
 # from toolfunctions.myarray import center_crop_paste
-from collections import defaultdict
 import jax
 from flax.core.frozen_dict import freeze
 from flax.training import train_state, checkpoints
@@ -41,8 +40,7 @@ def center_crop_paste(img,patchsize):
     res = modelout.reshape(patchs,patchs,channels,patchsize,patchsize)[:,:,:,padsize:patchsize-padsize,padsize:patchsize-padsize].transpose(2,1,3,0,4).reshape(channels,imgsize,imgsize)
     return modelin,res
 traincfg = 'preiod-10_lr-0.0003_sigma-0.03_trainsize-900_validsize-90_bs-15_features-128_optim-adam_cropsize-256_mode-vscode_caption-sigma0.01_group-awareligthfield_onlypattern-1'
-cfg = defaultdict(lambda:None)
-cfg = update(cfg,traincfg)
+cfg = update({},traincfg)
 # picnum = cfg['picnum']
 testdata = tiff.imread(f'/dataf/b/data/SIM00051.tif')
 from typing import Any
@@ -92,7 +90,7 @@ def testwrapfn(arr3d,patchsize=cfg['cropsize'],bs=cfg['bs'],norm_fn=norm,iteridx
     while iteridx < arr4d.shape[0]:
         arr = arr4d[iteridx:iteridx+bs]
         # arr = norm_fn(arr)
-        # arr,mean,var = norm_fn(arr)
+        arr,mean,var = norm_fn(arr)
         mean,var = 0,1
         iteridx += bs
         yield arr,mean,var
@@ -123,8 +121,8 @@ channels = 9
 test_res_p = test_p.reshape(patchs,patchs,channels,patchsize,patchsize)[:,:,:,padsize:patchsize-padsize,padsize:patchsize-padsize].transpose(2,1,3,0,4).reshape(channels,imgsize,imgsize)
 # test_res_p = jnp.concatenate([test_res_p,array])
 test_res = jnp.concatenate([test_res,array.mean(0,keepdims=True)])
-savetif(test_res,exec_dir+'/test-minmax.tif') #-nobatchnorm
-savetif(test_res_p,exec_dir+'/test55-2-pattern.tif')
+savetif(test_res,exec_dir+'/test-minmax-norm.tif') #-nobatchnorm
+savetif(test_res_p,exec_dir+'/test55-2-pattern-norm.tif')
 savetif(jnp.concatenate([modelout[3],modelin[3],res_p[3]],1))
 savetif.x
 

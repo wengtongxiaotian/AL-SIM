@@ -17,6 +17,7 @@ class DND_SIM(nn.Module):
         rec_x = jnp.transpose(y, (0, 3, 1, 2))
         # rec_p = D
         rec_p = Decoder(32, out=9)(z1, z2, z3, z4_dropout, z5_dropout)
+        rec_p = nn.activation.softmax(rec_p)
         rec_p = jnp.transpose(rec_p,(0,3,1,2))
         # result
         res = {

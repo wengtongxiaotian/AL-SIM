@@ -20,13 +20,18 @@ def simple_score(batch , net, params, rng, train):
     psf_step = numpy.random.randint(20,40)
     psf_step = 40
     psf = standard_psf_debye(31,step = psf_step)
-    D = jax.lax.stop_gradient(convolve(I*x,psf)+noise)
-    
+    D = convolve(I*x,psf)+noise
+    # batch norm
+    mean = D.mean(axis=(-2, -1), keepdims=True)
+    var = D.var(axis=(-2, -1), keepdims=True)
+    D = (D - mean) / (var + 1e-6) ** .5
+    D = jax.lax.stop_gradient(D)
     # if not tool.global_dict.get('realdata',False):
     #     print('realdata')
     #     D = 
     res = net.apply({'params': params}, D , train, rngs={'dropout':rng})
     error = {}
+    rec_p = res['rec_p']
     error["rec"] = rec_loss(x, res['rec'])
     error["nrmse"] = nrmse(x, res["rec"])
     error['rec_p'] = rec_loss(I,res['rec_p'])

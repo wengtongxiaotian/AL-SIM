@@ -2,8 +2,8 @@ import sys
 import glob
 sys.path.append('.')
 if len(sys.argv) == 1:
-    sys.argv.append(f'group-cocoandcurve_cuda-2_realdata')#_onlypattern
-from tool import np,update,dict2str,create_path,tiff,savetif,savepng,printinfo,exec_dir,saveresult,global_dict,tikcount
+    sys.argv.append(f'group-Dnorm_cuda-2')#_onlypattern_realdata_onlyrecon
+from tool import np,update,dict2str,create_path,pdb,tiff,savetif,savepng,printinfo,exec_dir,saveresult,global_dict,tikcount
 from data_simulation.distort import twist
 from train_utils import simple_score as compute_metrics
 from ai_codes.eval_class import Eval
@@ -22,7 +22,7 @@ imgdir = create_path(exec_dir,'imgs')
 tiffdir = create_path(exec_dir,'tiffs')
 print(exec_dir,evalpath,ckptdir)
 basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-99_validsize-5_bs-3_features-32_optim-adam_cropsize-256' #memory 32.6G
-basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-100000_validsize-1000_bs-10_features-128_optim-adam_cropsize-256'
+basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-1000_validsize-10_bs-10_features-128_optim-adam_cropsize-256'
 cfg = update({},basecfg)
 cfg = update(cfg,sys.argv[-1])
 eval = Eval(evalpath,dict2str(cfg))
@@ -125,7 +125,7 @@ train_files = '/dataf/ndl/_record/newdataset/coco_bg.tif'
 test_files = '/dataf/ndl/_record/newdataset/coco_bg.tif'
 
 from torch.utils.data import DataLoader
-from utils.utils_data import dataset, psfset, get_sample
+from utils.utils_data import dataset
 coco_dir = '/dataf/Research/Jax-AI-for-science/Guided-SIM-Meta/data/unlabeled2017/*.jpg'
 curve_dir = '/dataf/b/data/vo_circle_sim/30/train_gt/*.tif'
 sharp_imgs = glob.glob(coco_dir)+glob.glob(curve_dir)*20
@@ -155,8 +155,11 @@ for epoch in range(10000):
             x = jax.lax.stop_gradient(x)
             noise = noise_generation(cfg,jax.random.PRNGKey(0))
             if not global_dict.get('realdata',False):
-                I = pattern_generation_jax(cfg,jax.random.PRNGKey(0))
-                I = twist(I)
+                if global_dict['group'] =='dlsim':
+                    cfg['cropsize'] = cfg['cropsize']//2
+                    I = pattern_generation_jax(cfg,jax.random.PRNGKey(0))
+                    cfg['cropsize'] = cfg['cropsize']*2
+                else: I = twist(pattern_generation_jax(cfg,jax.random.PRNGKey(0)))
             else: I = xx(jax.random.PRNGKey(0))
             batch = (x,I,noise)
             metrics,res = eval_step(state,batch)
@@ -194,8 +197,12 @@ for epoch in range(10000):
         trained += x.shape[0]
         noise = noise_generation(cfg,state.rng)
         if not global_dict.get('realdata',False):
-            I = pattern_generation_jax(cfg,state.rng,)
-            I = twist(I)
+            
+            if global_dict['group'] =='dlsim':
+                cfg['cropsize'] = cfg['cropsize']//2
+                I = pattern_generation_jax(cfg,state.rng,)
+                cfg['cropsize'] = cfg['cropsize']*2
+            else: I = twist(pattern_generation_jax(cfg,state.rng,))
         else:I = xx(state.rng)
         batch = (x,I,noise)
         error, res, state = train_step(state,batch)
