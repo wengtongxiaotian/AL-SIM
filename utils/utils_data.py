@@ -9,7 +9,42 @@ import torch
 from torch import Tensor
 from torchvision.transforms.transforms import _setup_size, F
 from typing import Tuple
+import random
+class dataset_lf(torch.utils.data.Dataset):
+    def __init__(self, file_paths, crop_size, sample_size=None):
+        super().__init__()
+        self.file_paths = file_paths
+        self.transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+            ]
+        )
+        self.picnum = len(file_paths)
+        self.crop_size = crop_size
+        
+    def __getitem__(self, idx):
+        lfs = random.sample(self.file_paths, 3)
+        I = []
+        for i in range(3):
+            coco_item = lfs[i]
+            coco_item = imread(coco_item, as_gray=True)
+            coco_item -= coco_item.min()
+            coco_item = coco_item/coco_item.max()
+            phi = coco_item*np.pi*2
+            I1 = []
+            phi0 = np.random.rand()*np.pi
+            for j in range(3):
+                I1.append(np.sin(phi+j*np.pi/3*2+phi0)+1)
+            I1 = np.stack(I1)
+            I1 = resize(I1,(3,self.crop_size,self.crop_size))
+            I1 = I1/I1.mean(axis=0,keepdims=True) # consider rec_p is from softmax,mean won't make sense
+            I.append(I1)
+        x = np.concatenate(I)
+        # x = self.transform(x)
+        return x
 
+    def __len__(self):
+        return 10000000
 
 class dataset(torch.utils.data.Dataset):
     def __init__(self, file_paths, crop_size, sample_size=None):

@@ -3,7 +3,7 @@ import sys
 sys.path.append('.')
 sys.argv.append('cuda-2')
 from tool import *
-exec_dir = '/dataf/b/_record/dlsim/mu'
+exec_dir = '/dataf/b/_record/newparam/kk'
 ckptdir = exec_dir+'/ckpt'
 #/dataf/dl/_record/pred_I_unet/zwsvx/params/121440.pkl
 import pickle

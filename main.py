@@ -2,7 +2,7 @@ import sys
 import glob
 sys.path.append('.')
 if len(sys.argv) == 1:
-    sys.argv.append(f'group-Dnorm_cuda-2')#_onlypattern_realdata_onlyrecon
+    sys.argv.append(f'group-realpsf_cuda-1_onlyrecon_realdata_bs-10')#_onlypattern_cocolf
 from tool import np,update,dict2str,create_path,pdb,tiff,savetif,savepng,printinfo,exec_dir,saveresult,global_dict,tikcount
 from data_simulation.distort import twist
 from train_utils import simple_score as compute_metrics
@@ -22,7 +22,7 @@ imgdir = create_path(exec_dir,'imgs')
 tiffdir = create_path(exec_dir,'tiffs')
 print(exec_dir,evalpath,ckptdir)
 basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-99_validsize-5_bs-3_features-32_optim-adam_cropsize-256' #memory 32.6G
-basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-1000_validsize-10_bs-10_features-128_optim-adam_cropsize-256'
+basecfg = 'preiod-10_lr-0.0003_sigma-0.5_trainsize-100000_validsize-1000_bs-10_features-128_optim-adam_cropsize-256_epoch-20'
 cfg = update({},basecfg)
 cfg = update(cfg,sys.argv[-1])
 eval = Eval(evalpath,dict2str(cfg))
@@ -50,7 +50,7 @@ def iterwrapfn(train_files,cropsize,bs):
     res = norm(res)
     print(printinfo())
     return res
-I_data = tiff.imread('/dataf/b/_record/cocoandcurve/nj/test55-2-pattern.tif')
+I_data = tiff.imread('/dataf/b/_record/Dnorm/kw/test55-2-pattern-norm.tif')
 def xx(key_new):
     I = np.zeros((cfg['bs'],9,cfg['cropsize'],cfg['cropsize']))
     for i in range(cfg['bs']):
@@ -117,15 +117,15 @@ def noise_generation(cfg,key_new,):
     float_noise = jax.random.uniform(key_new,shape=(cfg['bs'],1,1,1), minval=0, maxval=1)
     noise = jax.random.normal(key_new, (cfg['bs'],9,cfg['cropsize'],cfg['cropsize'])) * float_noise *cfg['sigma']
     return noise
-train_files = glob.glob(f'/home/wtxt/a/data/vo_circle_sim/30/train_gt/*.tif')
-test_files = glob.glob(f'/home/wtxt/a/data/vo_circle_sim/30/test_gt/*.tif')
+# train_files = glob.glob(f'/home/wtxt/a/data/vo_circle_sim/30/train_gt/*.tif')
+# test_files = glob.glob(f'/home/wtxt/a/data/vo_circle_sim/30/test_gt/*.tif')
 # train_files = '/dataf/ndl/_record/newdataset/1000-1000-100-20-merge_id-onj.tif'
 # test_files = '/dataf/ndl/_record/newdataset/100-1000-100-20-merge_id-ond.tif'
-train_files = '/dataf/ndl/_record/newdataset/coco_bg.tif'
-test_files = '/dataf/ndl/_record/newdataset/coco_bg.tif'
+# train_files = '/dataf/ndl/_record/newdataset/coco_bg.tif'
+# test_files = '/dataf/ndl/_record/newdataset/coco_bg.tif'
 
 from torch.utils.data import DataLoader
-from utils.utils_data import dataset
+from utils.utils_data import dataset,dataset_lf
 coco_dir = '/dataf/Research/Jax-AI-for-science/Guided-SIM-Meta/data/unlabeled2017/*.jpg'
 curve_dir = '/dataf/b/data/vo_circle_sim/30/train_gt/*.tif'
 sharp_imgs = glob.glob(coco_dir)+glob.glob(curve_dir)*20
@@ -135,40 +135,43 @@ print(len(sharp_imgs)) # 12万多
 train_files = sharp_imgs[:cfg['trainsize']]
 test_files = sharp_imgs[-cfg['validsize']:]#[int(len(sharp_imgs)*0.1):]
 # dataset_ts = iterwrapfn(test_files,cfg['cropsize'],cfg['bs'])[-cfg['validsize']:]
-dataset_tn = DataLoader(dataset(train_files, cfg['cropsize'], cfg['trainsize']), batch_size=cfg['bs'], shuffle=True, num_workers=0, drop_last=True)
-dataset_ts = DataLoader(dataset(test_files, cfg['cropsize'], cfg['validsize']), batch_size=cfg['bs'], shuffle=False, num_workers=0, drop_last=True)
-
-trained = 0
+dataset_tn = DataLoader(dataset(train_files, cfg['cropsize'], cfg['trainsize']), batch_size=cfg['bs'], shuffle=True, num_workers=cfg['bs'], drop_last=True, pin_memory=True)
+dataset_ts = DataLoader(dataset(test_files, cfg['cropsize'], cfg['validsize']), batch_size=cfg['bs'], shuffle=False, num_workers=cfg['bs'], drop_last=True, pin_memory=True)
+dataset_lf = DataLoader(dataset_lf(glob.glob(coco_dir), cfg['cropsize'], cfg['trainsize']), batch_size=cfg['bs'], shuffle=True, num_workers=cfg['bs'], drop_last=True, pin_memory=True)
 from tqdm import tqdm
-for epoch in range(10000):
+for epoch in range(cfg["epoch"]):
+    lf_data = iter(dataset_lf)
     if epoch > 0:#  and epoch>10
         print("start evaluation",printinfo())
         traindir = exec_dir
         checkpoints.save_checkpoint(ckpt_dir=ckptdir,
                             target={'params': state.params,
                                     'rng': state.rng},
-                            step=trained,
+                            step=epoch,
                             overwrite=True)        
         metrics_eval = {'rec': [], 'rec_p': [], 'nrmse': [], 'loss':[]}
         for x in dataset_ts:
             x = jnp.array(x)
-            x = jax.lax.stop_gradient(x)
             noise = noise_generation(cfg,jax.random.PRNGKey(0))
-            if not global_dict.get('realdata',False):
+            if global_dict.get('realdata',False):I = xx(jax.random.PRNGKey(0))
+            elif global_dict.get('cocolf',False):
+                I = next(lf_data)
+                I = jnp.array(I)
+            else: 
                 if global_dict['group'] =='dlsim':
                     cfg['cropsize'] = cfg['cropsize']//2
                     I = pattern_generation_jax(cfg,jax.random.PRNGKey(0))
                     cfg['cropsize'] = cfg['cropsize']*2
                 else: I = twist(pattern_generation_jax(cfg,jax.random.PRNGKey(0)))
-            else: I = xx(jax.random.PRNGKey(0))
+
             batch = (x,I,noise)
             metrics,res = eval_step(state,batch)
             metrics_eval = {k: v + [metrics[k]] for k, v in metrics_eval.items()}
         metrics_eval = {k: sum(v)/len(v) for k, v in metrics_eval.items()}
         print('\n',"%.2e"%np.array(metrics_eval['rec'].mean()),"%.2e"%np.array(metrics_eval['nrmse'].mean()))
         # region save
-        eval.trained,eval.time,eval.loss,eval.rec,eval.nrmse,eval.rec_p = \
-            trained,tikcount(),metrics_eval['loss'].item()*100,metrics_eval['rec'].item()*100,metrics_eval['nrmse'].item()*100,metrics_eval['rec_p'].item()*100
+        eval.epoch,eval.time,eval.loss,eval.rec,eval.nrmse,eval.rec_p = \
+            epoch,tikcount(),metrics_eval['loss'].item()*100,metrics_eval['rec'].item()*100,metrics_eval['nrmse'].item()*100,metrics_eval['rec_p'].item()*100
         eval.save()
         # saveresult(f"pattern_loss: {round(metrics_eval['rec_p'].item()*100,3)}")
         saveresult(f"rec_loss: {round(metrics_eval['rec'].item()*100,3)}")
@@ -192,18 +195,18 @@ for epoch in range(10000):
     # dataset_tn = iterwrapfn(train_files[:cfg['trainsize']],cfg['cropsize'],cfg['bs'])
     for i,x in tqdm(enumerate(dataset_tn)):
         x = jnp.array(x)
-        x = jax.lax.stop_gradient(x)
-        # print(trained,int(time.time()-start_time))
-        trained += x.shape[0]
         noise = noise_generation(cfg,state.rng)
-        if not global_dict.get('realdata',False):
-            
+        if global_dict.get('realdata',False):I = xx(state.rng)
+        elif global_dict.get('cocolf',False):
+            I = next(lf_data)
+            I = jnp.array(I)
+        else: 
             if global_dict['group'] =='dlsim':
                 cfg['cropsize'] = cfg['cropsize']//2
-                I = pattern_generation_jax(cfg,state.rng,)
+                I = pattern_generation_jax(cfg,state.rng)
                 cfg['cropsize'] = cfg['cropsize']*2
-            else: I = twist(pattern_generation_jax(cfg,state.rng,))
-        else:I = xx(state.rng)
+            else: I = twist(pattern_generation_jax(cfg,state.rng))
+
         batch = (x,I,noise)
         error, res, state = train_step(state,batch)
         trainloss = error['loss'] if i==0 else trainloss*i/(i+1) + error['loss']/(i+1)
