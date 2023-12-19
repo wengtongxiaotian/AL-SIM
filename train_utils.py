@@ -21,13 +21,10 @@ def rec_loss(x, rec):
     rec_norm = (rec-rec.min()) / (rec.max()-rec.min())
     return 0.875 * jnp.mean(jnp.abs(x - rec)) + 0.125 * (1 - ms_ssim(x_norm, rec_norm, win_size=5))
 def simple_score(batch , net, params, rng, train):
-    x,I,noise = batch
-    # psf_step = numpy.random.randint(20,40)
-    # psf_step = 40
-    # psf = standard_psf_debye(31,step = psf_step)
-    psf = jnp.array(imread('/dataf/Research/Jax-AI-for-science/SSL-SIM/ckpt/clip_finetune/sim_data/crop_size=[1, 224, 224]--eval_sigma=None--add_noise=1--decay_steps_ratio=0.9--mask_ratio=0.75--patch_size=[1, 16, 16]--psf_size=[1, 49, 49]--rescale=[1, 1, 1]--stage_1/psf.tif')[10:39,10:39])[jnp.newaxis,jnp.newaxis]
+    x,I,noise,psf,bg = batch
+    psf_bg = standard_psf_debye(31,step = 10)
     
-    D = convolve(I*x,psf)+noise
+    D = convolve(I*x,psf)+noise + convolve(bg,psf_bg)
     # batch norm
     mean = D.mean(axis=(-2, -1), keepdims=True)
     var = D.var(axis=(-2, -1), keepdims=True)

@@ -71,7 +71,7 @@ class Encoder(nn.Module):
         z5 = nn.Conv(self.features * 16, kernel_size=(3, 3), kernel_init=self.kernel_init, bias_init=self.bias_init)(z5)
         z5 = nn.relu(z5)
         z5_dropout = nn.Dropout(0.5, deterministic=not training)(z5)
-
+        # z5_dropout = nn.Conv(1,kernel_size=(1, 1), kernel_init=self.kernel_init, bias_init=self.bias_init)(z5_dropout)
         return z1, z2, z3, z4_dropout, z5_dropout
 
 

@@ -2,7 +2,7 @@ import sys
 import glob
 sys.path.append('.')
 if len(sys.argv) == 1:
-    sys.argv.append(f'group-realpsf_cuda-1_onlyrecon_realdata_bs-10')#_onlypattern_cocolf
+    sys.argv.append(f'group-cocolf1219_cuda-2_bs-10_onlypattern_cocolf')#onlyrecon_realdata_cocolf_
 from tool import np,update,dict2str,create_path,pdb,tiff,savetif,savepng,printinfo,exec_dir,saveresult,global_dict,tikcount
 from data_simulation.distort import twist
 from train_utils import simple_score as compute_metrics
@@ -138,10 +138,11 @@ test_files = sharp_imgs[-cfg['validsize']:]#[int(len(sharp_imgs)*0.1):]
 dataset_tn = DataLoader(dataset(train_files, cfg['cropsize'], cfg['trainsize']), batch_size=cfg['bs'], shuffle=True, num_workers=cfg['bs'], drop_last=True, pin_memory=True)
 dataset_ts = DataLoader(dataset(test_files, cfg['cropsize'], cfg['validsize']), batch_size=cfg['bs'], shuffle=False, num_workers=cfg['bs'], drop_last=True, pin_memory=True)
 dataset_lf = DataLoader(dataset_lf(glob.glob(coco_dir), cfg['cropsize'], cfg['trainsize']), batch_size=cfg['bs'], shuffle=True, num_workers=cfg['bs'], drop_last=True, pin_memory=True)
+coco_bg = tiff.imread('/dataf/ndl/_record/newdataset/coco_bg.tif')
 from tqdm import tqdm
 for epoch in range(cfg["epoch"]):
     lf_data = iter(dataset_lf)
-    if epoch > 0:#  and epoch>10
+    if epoch > -1:#  and epoch>10
         print("start evaluation",printinfo())
         traindir = exec_dir
         checkpoints.save_checkpoint(ckpt_dir=ckptdir,
@@ -163,8 +164,16 @@ for epoch in range(cfg["epoch"]):
                     I = pattern_generation_jax(cfg,jax.random.PRNGKey(0))
                     cfg['cropsize'] = cfg['cropsize']*2
                 else: I = twist(pattern_generation_jax(cfg,jax.random.PRNGKey(0)))
-
-            batch = (x,I,noise)
+            # psf_step = numpy.random.randint(20,40)
+            # psf_step = 40
+            # psf = standard_psf_debye(31,step = psf_step)
+            psf = jnp.array(tiff.imread('/dataf/Research/Jax-AI-for-science/SIMFormer/ckpt/clip_finetune/sim_data/crop_size=[224, 224]--eval_sigma=None--add_noise=1--decay_steps_ratio=0.9--lf_tv=0.001--mask_ratio=0.9--patch_size=[1, 16, 16]--psf_size=[49, 49]--rescale=[1, 1]--stage_1/psf.tif'))[jnp.newaxis,jnp.newaxis]
+            bgcrop,bgcrop2 = np.random.randint(120,size=(2,x.shape[0]))
+            frame = np.random.randint(6550,size=(x.shape[0],))
+            bg = np.zeros(x.shape)
+            for i,(l,m,n) in enumerate(zip(frame,bgcrop,bgcrop2)):
+                bg[i] = coco_bg[l:l+1,m:m+256,n:n+256]
+            batch = (x,I,noise,psf,bg)
             metrics,res = eval_step(state,batch)
             metrics_eval = {k: v + [metrics[k]] for k, v in metrics_eval.items()}
         metrics_eval = {k: sum(v)/len(v) for k, v in metrics_eval.items()}
@@ -190,7 +199,7 @@ for epoch in range(cfg["epoch"]):
             savepng(res['rec_p'][i,:].reshape(3,3,256,256).transpose(0,2,1,3).reshape(3*256,3*256),create_path(imgdir,printinfo(1)+'.png'))
         print("end evaluation",printinfo())
         # endregion
-    
+
     rng = state.rng
     # dataset_tn = iterwrapfn(train_files[:cfg['trainsize']],cfg['cropsize'],cfg['bs'])
     for i,x in tqdm(enumerate(dataset_tn)):
@@ -206,8 +215,12 @@ for epoch in range(cfg["epoch"]):
                 I = pattern_generation_jax(cfg,state.rng)
                 cfg['cropsize'] = cfg['cropsize']*2
             else: I = twist(pattern_generation_jax(cfg,state.rng))
-
-        batch = (x,I,noise)
+        bgcrop,bgcrop2 = np.random.randint(120,size=(2,x.shape[0]))
+        frame = np.random.randint(6550,size=(x.shape[0],))
+        bg = np.zeros(x.shape)
+        for idx,(l,m,n) in enumerate(zip(frame,bgcrop,bgcrop2)):
+            bg[idx] = coco_bg[l:l+1,m:m+256,n:n+256]
+        batch = (x,I,noise,psf,bg)
         error, res, state = train_step(state,batch)
         trainloss = error['loss'] if i==0 else trainloss*i/(i+1) + error['loss']/(i+1)
     eval.trainloss = trainloss.item()
