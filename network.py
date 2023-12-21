@@ -12,6 +12,7 @@ class DND_SIM(nn.Module):
 
         x = jnp.transpose(D, (0, 2, 3, 1))
         z1, z2, z3, z4_dropout, z5_dropout = Encoder(self.features)(x, training)
+        # import pdb; pdb.set_trace()
         y = Decoder(self.features, out=1)(z1, z2, z3, z4_dropout, z5_dropout)
         # y = x[...,:1]
         rec_x = jnp.transpose(y, (0, 3, 1, 2))
@@ -85,6 +86,7 @@ class Decoder(nn.Module):
     def __call__(self, z1, z2, z3, z4_dropout, z5_dropout):
         z6_up = jax.image.resize(z5_dropout, shape=(z5_dropout.shape[0], z5_dropout.shape[1] * 2, z5_dropout.shape[2] * 2, z5_dropout.shape[3]),
                                  method='nearest')
+        # print(z6_up.shape,z4_dropout.shape)
         z6 = nn.Conv(self.features * 8, kernel_size=(2, 2), kernel_init=self.kernel_init, bias_init=self.bias_init)(z6_up)
         z6 = nn.relu(z6)
         z6 = jnp.concatenate([z4_dropout, z6], axis=3)
